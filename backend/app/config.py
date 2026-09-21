@@ -6,12 +6,18 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:3b"
-    embedding_model: str = "all-MiniLM-L6-v2"
-    chroma_dir: str = str(BACKEND_ROOT / "chroma_db")
+    groq_api_key: str
+    groq_model: str = "openai/gpt-oss-20b"
+
+    cohere_api_key: str
+    cohere_model: str = "embed-english-v3.0"
+
+    supabase_url: str
+    supabase_service_role_key: str
+    supabase_table: str = "documents"
+    match_function: str = "match_documents"
+
     knowledge_base_dir: str = str(BACKEND_ROOT / "data" / "knowledge_base")
-    collection_name: str = "cricket_rules"
     top_k: int = 4
     cors_origins: str = "http://localhost:5173"
 

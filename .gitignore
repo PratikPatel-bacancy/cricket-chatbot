@@ -1,6 +1,5 @@
 # Backend
 backend/.env
-backend/chroma_db/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/venv/
@@ -9,6 +8,7 @@ backend/.venv/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.env
 
 # OS
 .DS_Store

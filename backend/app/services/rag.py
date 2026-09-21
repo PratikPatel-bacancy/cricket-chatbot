@@ -7,6 +7,8 @@ from app.config import settings
 from app.services.embeddings import embed_query
 from app.services.vectorstore import query as query_vectorstore
 
+GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+
 SYSTEM_PROMPT = """You are an expert cricket rules assistant. You answer questions about the \
 Laws of Cricket and common playing conditions (LBW, DRS, no-balls, wides, run-outs, follow-on, \
 powerplays, boundary/catch rules, etc.).
@@ -19,9 +21,7 @@ relevant law/rule name when helpful.
 Use the prior conversation turns to understand follow-up questions (e.g. "what about in T20s?"
 after discussing follow-on rules), but still ground every factual claim in the provided context."""
 
-# Local 3B models have a limited context window; keep only the last few
-# exchanges so retrieved context always has room in the prompt.
-MAX_HISTORY_MESSAGES = 10
+MAX_HISTORY_MESSAGES = 20
 
 
 def retrieve(question: str, top_k: int | None = None):
@@ -29,17 +29,13 @@ def retrieve(question: str, top_k: int | None = None):
     embedding = embed_query(question)
     # Over-fetch, then dedupe by (file, heading) so overlapping chunk splits
     # from the same section don't crowd out other distinct rule sections.
-    results = query_vectorstore(embedding, k * 3)
-
-    documents = results["documents"][0]
-    metadatas = results["metadatas"][0]
-    distances = results["distances"][0]
+    rows = query_vectorstore(embedding, k * 3)
 
     seen: set[tuple[str, str]] = set()
     sources = []
-    for doc, meta, dist in zip(documents, metadatas, distances):
-        file = meta.get("file", "")
-        heading = meta.get("heading", file)
+    for row in rows:
+        file = row.get("file", "")
+        heading = row.get("heading", file)
         key = (file, heading)
         if key in seen:
             continue
@@ -49,8 +45,8 @@ def retrieve(question: str, top_k: int | None = None):
             {
                 "title": heading,
                 "file": file,
-                "snippet": doc,
-                "score": round(1 - dist, 4),
+                "snippet": row.get("content", ""),
+                "score": round(row.get("similarity", 0.0), 4),
             }
         )
         if len(sources) >= k:
@@ -72,28 +68,38 @@ def _build_messages(question: str, sources: list[dict], history: list[dict] | No
     return messages
 
 
+def _groq_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {settings.groq_api_key}",
+        "Content-Type": "application/json",
+    }
+
+
 async def answer_stream(question: str, history: list[dict] | None = None) -> AsyncIterator[dict]:
     """Yields dicts of shape {"type": "token", "text": str} for each streamed
     token, followed by a final {"type": "sources", "sources": [...]}."""
     sources = retrieve(question)
     messages = _build_messages(question, sources, history)
 
-    async with httpx.AsyncClient(base_url=settings.ollama_host, timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         async with client.stream(
             "POST",
-            "/api/chat",
-            json={"model": settings.ollama_model, "messages": messages, "stream": True},
+            GROQ_CHAT_URL,
+            headers=_groq_headers(),
+            json={"model": settings.groq_model, "messages": messages, "stream": True},
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
-                if not line:
+                if not line or not line.startswith("data: "):
                     continue
-                chunk = json.loads(line)
-                content = chunk.get("message", {}).get("content", "")
+                payload = line[len("data: ") :]
+                if payload == "[DONE]":
+                    break
+                chunk = json.loads(payload)
+                delta = chunk["choices"][0].get("delta", {})
+                content = delta.get("content", "")
                 if content:
                     yield {"type": "token", "text": content}
-                if chunk.get("done"):
-                    break
 
     yield {"type": "sources", "sources": sources}
 
@@ -103,10 +109,11 @@ def answer_once(question: str, history: list[dict] | None = None) -> dict:
     messages = _build_messages(question, sources, history)
 
     response = httpx.post(
-        f"{settings.ollama_host}/api/chat",
-        json={"model": settings.ollama_model, "messages": messages, "stream": False},
-        timeout=120.0,
+        GROQ_CHAT_URL,
+        headers=_groq_headers(),
+        json={"model": settings.groq_model, "messages": messages, "stream": False},
+        timeout=60.0,
     )
     response.raise_for_status()
-    answer_text = response.json().get("message", {}).get("content", "")
+    answer_text = response.json()["choices"][0]["message"]["content"]
     return {"answer": answer_text, "sources": sources}

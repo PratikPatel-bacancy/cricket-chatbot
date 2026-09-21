@@ -24,10 +24,12 @@ def run_ingestion() -> dict:
         return {"files_processed": len(md_files), "chunks_indexed": 0}
 
     texts = [c.text for c in all_chunks]
-    embeddings = embed_texts(texts)
-    ids = [f"{c.file}-{i}" for i, c in enumerate(all_chunks)]
-    metadatas = [{"file": c.file, "heading": c.heading} for c in all_chunks]
+    embeddings = embed_texts(texts, input_type="search_document")
 
-    add_chunks(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
+    rows = [
+        {"content": c.text, "file": c.file, "heading": c.heading, "embedding": embedding}
+        for c, embedding in zip(all_chunks, embeddings)
+    ]
+    add_chunks(rows)
 
     return {"files_processed": len(md_files), "chunks_indexed": len(all_chunks)}

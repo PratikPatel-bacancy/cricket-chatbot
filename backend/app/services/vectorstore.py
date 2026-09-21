@@ -1,34 +1,45 @@
-from functools import lru_cache
-
-import chromadb
+import httpx
 
 from app.config import settings
 
 
-@lru_cache(maxsize=1)
-def get_collection():
-    client = chromadb.PersistentClient(path=settings.chroma_dir)
-    return client.get_or_create_collection(
-        name=settings.collection_name,
-        metadata={"hnsw:space": "cosine"},
-    )
+def _headers(extra: dict | None = None) -> dict:
+    headers = {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
 
 
 def reset_collection():
-    client = chromadb.PersistentClient(path=settings.chroma_dir)
-    try:
-        client.delete_collection(settings.collection_name)
-    except Exception:
-        pass
-    get_collection.cache_clear()
-    return get_collection()
+    response = httpx.delete(
+        f"{settings.supabase_url}/rest/v1/{settings.supabase_table}",
+        headers=_headers(),
+        params={"id": "gte.0"},
+        timeout=30.0,
+    )
+    response.raise_for_status()
 
 
-def add_chunks(ids: list[str], embeddings: list[list[float]], documents: list[str], metadatas: list[dict]):
-    collection = get_collection()
-    collection.add(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+def add_chunks(rows: list[dict]):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/{settings.supabase_table}",
+        headers=_headers({"Prefer": "return=minimal"}),
+        json=rows,
+        timeout=60.0,
+    )
+    response.raise_for_status()
 
 
-def query(embedding: list[float], top_k: int):
-    collection = get_collection()
-    return collection.query(query_embeddings=[embedding], n_results=top_k)
+def query(embedding: list[float], top_k: int) -> list[dict]:
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/{settings.match_function}",
+        headers=_headers(),
+        json={"query_embedding": embedding, "match_count": top_k},
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()

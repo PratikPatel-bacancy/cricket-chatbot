@@ -1,20 +1,28 @@
-from functools import lru_cache
-
-from sentence_transformers import SentenceTransformer
+import httpx
 
 from app.config import settings
 
-
-@lru_cache(maxsize=1)
-def get_embedder() -> SentenceTransformer:
-    return SentenceTransformer(settings.embedding_model)
+COHERE_EMBED_URL = "https://api.cohere.com/v1/embed"
+MAX_BATCH_SIZE = 90
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    embedder = get_embedder()
-    vectors = embedder.encode(texts, normalize_embeddings=True)
-    return vectors.tolist()
+def _embed_batch(texts: list[str], input_type: str) -> list[list[float]]:
+    response = httpx.post(
+        COHERE_EMBED_URL,
+        headers={"Authorization": f"Bearer {settings.cohere_api_key}"},
+        json={"texts": texts, "model": settings.cohere_model, "input_type": input_type},
+        timeout=60.0,
+    )
+    response.raise_for_status()
+    return response.json()["embeddings"]
+
+
+def embed_texts(texts: list[str], input_type: str = "search_document") -> list[list[float]]:
+    embeddings: list[list[float]] = []
+    for i in range(0, len(texts), MAX_BATCH_SIZE):
+        embeddings.extend(_embed_batch(texts[i : i + MAX_BATCH_SIZE], input_type))
+    return embeddings
 
 
 def embed_query(text: str) -> list[float]:
-    return embed_texts([text])[0]
+    return embed_texts([text], input_type="search_query")[0]

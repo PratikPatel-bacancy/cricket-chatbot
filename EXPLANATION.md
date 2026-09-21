@@ -60,27 +60,30 @@ There are exactly two things that happen in this system: **loading knowledge in*
 ### Flow A: Ingestion (done once, or whenever the knowledge base changes)
 
 ```
-Markdown files  →  Chunker  →  Embedding model  →  Vector database (Chroma)
-(knowledge_base/)  (splits by     (turns text into                (stores chunks +
-                    heading)       number vectors)                 their vectors)
+Markdown files  →  Chunker  →  Embedding API (Cohere)  →  Vector database (Supabase/pgvector)
+(knowledge_base/)  (splits by     (turns text into                 (stores chunks +
+                    heading)       number vectors)                  their vectors)
 ```
 
 - **Chunker**: splits each doc by its `##` headings, so each chunk is one self-contained rule
-  section (not an arbitrary character cut that could split a sentence in half).
-- **Embedding model**: `sentence-transformers` (`all-MiniLM-L6-v2`) — converts each chunk of text
-  into a list of ~384 numbers (a "vector") that captures its *meaning*. Runs fully locally, no
-  API calls, free.
-- **Vector database**: Chroma, stored on disk. Think of it as a searchable index where "nearby"
-  vectors mean "similar meaning."
+  section (not an arbitrary character cut that could split a sentence in half). Pure text
+  processing, no ML involved.
+- **Embedding model**: Cohere's `embed-english-v3.0` — converts each chunk of text into a list of
+  1024 numbers (a "vector") that captures its *meaning*. Called over Cohere's API rather than run
+  locally, because the local version (`sentence-transformers`, built on PyTorch) is far too heavy
+  to bundle into a serverless function.
+- **Vector database**: Postgres with the `pgvector` extension, hosted on Supabase. Think of it as
+  a searchable index where "nearby" vectors mean "similar meaning." A SQL function
+  (`match_documents`) does the actual similarity search using pgvector's cosine-distance operator.
 
 ### Flow B: Answering a question (happens on every chat message)
 
 ```
 User question
-   → Embed the question (same embedding model)
-   → Similarity search in Chroma → top-K most relevant chunks
+   → Embed the question (same Cohere embedding model)
+   → Similarity search in Supabase/pgvector → top-K most relevant chunks
    → Build a prompt: "Answer ONLY using this context: [chunks] ... Question: [question]"
-   → Send to the LLM (Ollama / Llama 3.2 3B, running locally)
+   → Send to the LLM (Groq API, serving the open-source gpt-oss-20b model)
    → Stream the answer back to the browser, token by token
    → Also send back which source sections were used (for transparency)
 ```
@@ -94,13 +97,21 @@ exact words with the question.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Backend | Python + FastAPI | Best ecosystem for RAG/ML tooling; async support for streaming |
-| Frontend | React + Vite + Tailwind | Simple, fast dev server, easy streaming UI |
-| Embeddings | `sentence-transformers` (local) | Free, offline, no API key — turns text into comparable vectors |
-| Vector store | Chroma (local, embedded) | Zero setup, no account, persists to disk |
-| LLM | Ollama running Llama 3.2 3B | Fully open-source, runs locally and free (no per-request cost, no API key) — this was a deliberate switch after starting with a paid API, to keep the whole stack free |
+| Backend | Python + FastAPI, on Vercel (serverless) | Best ecosystem for RAG tooling; deployable as a lightweight serverless function once heavy local ML deps were removed |
+| Frontend | React + Vite + Tailwind, on Vercel (static) | Simple, fast dev server, easy streaming UI, trivial static hosting |
+| Embeddings | Cohere `embed-english-v3.0` (hosted, free tier) | Same job as a local embedding model, but small enough footprint to call from a serverless function (no PyTorch bundled) |
+| Vector store | Supabase (Postgres + pgvector, free tier) | Managed, persists independently of any serverless function's ephemeral filesystem |
+| LLM | Groq API running `openai/gpt-oss-20b` | Fast inference, genuinely open-weight model (Apache 2.0), free tier — no local machine or GPU needed to serve it |
 
-**Everything runs on the local machine** — no cloud account, no API key, no cost per question.
+**Every piece is on a free tier** — the LLM and embedding model are open-source, only their
+*hosting* is a cloud service (needed to make the whole thing deployable and always-on).
+
+> **Evolution of this stack**: this project actually went through three architectures —
+> (1) a paid API (Anthropic Claude) → (2) fully local and free (Ollama + sentence-transformers +
+> Chroma) → (3) fully hosted and free (Groq + Cohere + Supabase), once "deploy it live on Vercel"
+> became a requirement, since Vercel's serverless functions can't run a persistent multi-GB local
+> model or a local-disk database. Being able to explain *why* each transition happened is more
+> valuable in a discussion than just describing the final state.
 
 ## 6. Why chunk by heading instead of fixed character count?
 
@@ -139,6 +150,26 @@ separates a strong answer from a scripted one.
    correctly end-to-end). Each layer can hide a different class of bug — e.g., the API can work
    perfectly while a frontend parsing bug still shows nothing on screen.
 
+5. **Deploying forced a second, bigger architecture swap.** Serverless hosting (Vercel) can't run
+   a persistent local LLM or a local-disk vector database, so moving from "runs on my machine" to
+   "deployed live" meant swapping *three* pieces at once: Ollama → Groq (hosted LLM API),
+   sentence-transformers → Cohere (hosted embeddings API), Chroma → Supabase/pgvector (hosted
+   vector DB). Same lesson as #2, at a bigger scale: because retrieval, embedding, and generation
+   are separate, swappable services behind clean interfaces, none of the chunking logic, prompt
+   logic, or frontend UI needed to change — only the three service-integration files did.
+
+6. **Hosted APIs drift under you.** The first Groq model name I configured
+   (`llama-3.1-8b-instant`) had been deprecated/renamed since — a 404 with a clear
+   `model_not_found` error, fixed by querying Groq's `/models` endpoint to see what was actually
+   available. A reminder that hosted-API dependencies (unlike a model file you download once) can
+   change their supported model list at any time.
+
+7. **A single mistyped character broke DNS, silently.** A Supabase project URL was decoded from
+   the wrong source and off by one character (`bonnxdudw` vs `bonnnxdudw`) — enough to produce a
+   hard "domain doesn't exist" error with no hint about *which* character was wrong. Lesson:
+   for URLs/IDs copied or derived indirectly, verify against the authoritative source (the actual
+   dashboard) rather than trusting a manual transcription.
+
 ## 8. Likely follow-up questions and short answers
 
 **Q: Why not fine-tune a model on cricket rules instead of RAG?**
@@ -157,12 +188,20 @@ Each retrieved chunk has a similarity score (0–1, higher = more relevant) show
 top-ranked chunk was the actually-relevant section.
 
 **Q: How would this scale to a much bigger knowledge base?**
-Chroma works fine up to hundreds of thousands of chunks. For much bigger corpora, next steps
-would be a managed vector DB (Pinecone/Weaviate), smarter retrieval (re-ranking, hybrid
-keyword+vector search), and a bigger/faster LLM if answer quality on harder questions degrades.
+Postgres/pgvector (via Supabase) comfortably handles hundreds of thousands of chunks. For much
+bigger corpora, next steps would be an approximate-nearest-neighbor index (pgvector supports
+HNSW), smarter retrieval (re-ranking, hybrid keyword+vector search), and a bigger/faster LLM if
+answer quality on harder questions degrades.
+
+**Q: Why not keep everything local instead of using hosted APIs?**
+That was the second iteration of this project, and it worked well for local development. It
+stopped being viable the moment "deploy this live on the internet" became a requirement — Vercel
+(and most serverless platforms) can't run a persistent multi-GB model process or a local-disk
+database, since serverless functions are stateless and spin up fresh per request.
 
 **Q: What's the one-sentence architecture summary?**
-"Cricket rules are chunked and embedded into a local vector database; each question is embedded
-the same way, matched against the database by similarity, and the top matching rule excerpts are
-handed to a local open-source LLM which answers using only that retrieved context, streaming the
-result back with its sources."
+"Cricket rules are chunked and embedded via a hosted embedding API into a Postgres/pgvector
+database; each question is embedded the same way, matched against that database by similarity,
+and the top matching rule excerpts are handed to an open-source LLM (served via a hosted
+inference API) which answers using only that retrieved context, streaming the result back with
+its sources."

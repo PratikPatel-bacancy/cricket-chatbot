@@ -1,3 +1,8 @@
+// In local dev this is empty and Vite's proxy forwards /api to localhost:8000.
+// In production (separate Vercel projects for frontend/backend) this points
+// at the deployed backend's URL.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+
 /**
  * Streams a chat answer from the backend's SSE endpoint.
  * Calls onToken(text) for each streamed token and onSources(sources) once
@@ -5,7 +10,7 @@
  */
 export async function streamChat(question, history, { onToken, onSources, onError }) {
   try {
-    const response = await fetch("/api/chat", {
+    const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, history }),
