@@ -11,8 +11,10 @@ router = APIRouter()
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
+    history = [{"role": m.role, "content": m.content} for m in request.history]
+
     async def event_generator():
-        async for event in answer_stream(request.question):
+        async for event in answer_stream(request.question, history):
             yield f"data: {json.dumps(event)}\n\n"
         yield "data: [DONE]\n\n"
 

@@ -19,6 +19,9 @@ export default function ChatWindow() {
   }, [messages]);
 
   const handleSend = (question) => {
+    // messages[0] is the welcome message, not part of the real conversation.
+    const history = messages.slice(1).map((m) => ({ role: m.role, content: m.text }));
+
     setMessages((prev) => [
       ...prev,
       { role: "user", text: question },
@@ -26,7 +29,7 @@ export default function ChatWindow() {
     ]);
     setIsStreaming(true);
 
-    streamChat(question, {
+    streamChat(question, history, {
       onToken: (token) => {
         setMessages((prev) => {
           const next = [...prev];

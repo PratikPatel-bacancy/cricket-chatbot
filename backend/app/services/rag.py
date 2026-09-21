@@ -14,7 +14,14 @@ powerplays, boundary/catch rules, etc.).
 Answer ONLY using the rule excerpts provided in the context below. If the context does not \
 contain enough information to answer confidently, say you don't have that rule in your \
 knowledge base rather than guessing. Keep answers clear and concise, and reference the \
-relevant law/rule name when helpful."""
+relevant law/rule name when helpful.
+
+Use the prior conversation turns to understand follow-up questions (e.g. "what about in T20s?"
+after discussing follow-on rules), but still ground every factual claim in the provided context."""
+
+# Local 3B models have a limited context window; keep only the last few
+# exchanges so retrieved context always has room in the prompt.
+MAX_HISTORY_MESSAGES = 10
 
 
 def retrieve(question: str, top_k: int | None = None):
@@ -57,18 +64,19 @@ def _build_prompt(question: str, sources: list[dict]) -> str:
     return f"Context (rule excerpts):\n\n{context}\n\n---\n\nQuestion: {question}"
 
 
-def _build_messages(question: str, sources: list[dict]) -> list[dict]:
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": _build_prompt(question, sources)},
-    ]
+def _build_messages(question: str, sources: list[dict], history: list[dict] | None = None) -> list[dict]:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for turn in (history or [])[-MAX_HISTORY_MESSAGES:]:
+        messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": _build_prompt(question, sources)})
+    return messages
 
 
-async def answer_stream(question: str) -> AsyncIterator[dict]:
+async def answer_stream(question: str, history: list[dict] | None = None) -> AsyncIterator[dict]:
     """Yields dicts of shape {"type": "token", "text": str} for each streamed
     token, followed by a final {"type": "sources", "sources": [...]}."""
     sources = retrieve(question)
-    messages = _build_messages(question, sources)
+    messages = _build_messages(question, sources, history)
 
     async with httpx.AsyncClient(base_url=settings.ollama_host, timeout=120.0) as client:
         async with client.stream(
@@ -90,9 +98,9 @@ async def answer_stream(question: str) -> AsyncIterator[dict]:
     yield {"type": "sources", "sources": sources}
 
 
-def answer_once(question: str) -> dict:
+def answer_once(question: str, history: list[dict] | None = None) -> dict:
     sources = retrieve(question)
-    messages = _build_messages(question, sources)
+    messages = _build_messages(question, sources, history)
 
     response = httpx.post(
         f"{settings.ollama_host}/api/chat",

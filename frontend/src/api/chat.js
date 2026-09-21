@@ -3,12 +3,12 @@
  * Calls onToken(text) for each streamed token and onSources(sources) once
  * the answer is complete.
  */
-export async function streamChat(question, { onToken, onSources, onError }) {
+export async function streamChat(question, history, { onToken, onSources, onError }) {
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history }),
     });
 
     if (!response.ok || !response.body) {
