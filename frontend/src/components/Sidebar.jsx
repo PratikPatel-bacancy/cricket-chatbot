@@ -1,9 +1,11 @@
+import { getSport } from "../sports";
+
 export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelectSession, onDeleteSession }) {
   return (
     <aside className="w-64 shrink-0 h-screen bg-gray-900 text-gray-200 flex flex-col">
       <div className="p-3">
         <button
-          onClick={onNewChat}
+          onClick={() => onNewChat()}
           className="w-full flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm hover:bg-gray-800 transition-colors"
         >
           <span className="text-base leading-none">+</span>
@@ -21,7 +23,9 @@ export default function Sidebar({ sessions, activeSessionId, onNewChat, onSelect
               s.id === activeSessionId ? "bg-gray-800 text-white" : "text-gray-300 hover:bg-gray-800/60"
             }`}
           >
-            <span className="truncate">{s.title}</span>
+            <span className="truncate">
+              {getSport(s.sport).emoji} {s.title}
+            </span>
             <button
               onClick={(e) => {
                 e.stopPropagation();

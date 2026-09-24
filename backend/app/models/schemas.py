@@ -8,6 +8,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
+    sport: str = "cricket"
     history: list[ChatMessage] = []
 
 

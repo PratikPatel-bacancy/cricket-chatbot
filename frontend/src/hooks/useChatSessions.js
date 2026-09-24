@@ -1,18 +1,15 @@
 import { useEffect, useState } from "react";
+import { DEFAULT_SPORT_ID, welcomeTextFor } from "../sports";
 
 const STORAGE_KEY = "cricket-chatbot-sessions";
 const TITLE_MAX_LENGTH = 40;
 
-const WELCOME_MESSAGE = {
-  role: "assistant",
-  text: "Ask me anything about cricket's rules and laws — LBW, DRS, no-balls, follow-on, dismissals, powerplays, and more.",
-};
-
-function createSession() {
+function createSession(sportId = DEFAULT_SPORT_ID) {
   return {
     id: crypto.randomUUID(),
     title: "New chat",
-    messages: [WELCOME_MESSAGE],
+    sport: sportId,
+    messages: [{ role: "assistant", text: welcomeTextFor(sportId) }],
     updatedAt: Date.now(),
   };
 }
@@ -22,12 +19,20 @@ function truncateTitle(text) {
   return trimmed.length > TITLE_MAX_LENGTH ? `${trimmed.slice(0, TITLE_MAX_LENGTH)}…` : trimmed;
 }
 
+// Sessions saved before the multi-sport feature existed have no `sport` field;
+// default them to cricket so old chat history keeps working.
+function normalizeSession(session) {
+  return { sport: DEFAULT_SPORT_ID, ...session };
+}
+
 function loadInitialState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.sessions?.length) return parsed;
+      if (parsed?.sessions?.length) {
+        return { ...parsed, sessions: parsed.sessions.map(normalizeSession) };
+      }
     }
   } catch {
     // corrupt or unavailable storage; fall through to a fresh session
@@ -50,8 +55,8 @@ export function useChatSessions() {
   const activeSession =
     state.sessions.find((s) => s.id === state.activeSessionId) ?? state.sessions[0];
 
-  const newChat = () => {
-    const session = createSession();
+  const newChat = (sportId = DEFAULT_SPORT_ID) => {
+    const session = createSession(sportId);
     setState((prev) => ({
       sessions: [session, ...prev.sessions],
       activeSessionId: session.id,
@@ -89,6 +94,19 @@ export function useChatSessions() {
     }));
   };
 
+  // Only meaningful before the first real question is asked (still just the
+  // welcome message) — switching sport mid-conversation would be confusing.
+  const updateSessionSport = (id, sportId) => {
+    setState((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((s) =>
+        s.id === id
+          ? { ...s, sport: sportId, messages: [{ role: "assistant", text: welcomeTextFor(sportId) }] }
+          : s
+      ),
+    }));
+  };
+
   return {
     sessions: [...state.sessions].sort((a, b) => b.updatedAt - a.updatedAt),
     activeSession,
@@ -96,5 +114,6 @@ export function useChatSessions() {
     selectSession,
     deleteSession,
     updateSessionMessages,
+    updateSessionSport,
   };
 }

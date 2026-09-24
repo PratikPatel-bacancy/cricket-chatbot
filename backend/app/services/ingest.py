@@ -8,28 +8,34 @@ from app.services.vectorstore import add_chunks, reset_collection
 
 def run_ingestion() -> dict:
     kb_dir = Path(settings.knowledge_base_dir)
-    md_files = sorted(kb_dir.glob("*.md"))
+    sport_dirs = sorted(d for d in kb_dir.iterdir() if d.is_dir())
 
-    if not md_files:
+    if not sport_dirs:
         return {"files_processed": 0, "chunks_indexed": 0}
 
     reset_collection()
 
     all_chunks = []
-    for md_file in md_files:
-        content = md_file.read_text(encoding="utf-8")
-        all_chunks.extend(chunk_markdown(content, md_file.name))
+    sports = []
+    files_processed = 0
+    for sport_dir in sport_dirs:
+        for md_file in sorted(sport_dir.glob("*.md")):
+            content = md_file.read_text(encoding="utf-8")
+            chunks = chunk_markdown(content, md_file.name)
+            all_chunks.extend(chunks)
+            sports.extend([sport_dir.name] * len(chunks))
+            files_processed += 1
 
     if not all_chunks:
-        return {"files_processed": len(md_files), "chunks_indexed": 0}
+        return {"files_processed": files_processed, "chunks_indexed": 0}
 
     texts = [c.text for c in all_chunks]
     embeddings = embed_texts(texts, input_type="search_document")
 
     rows = [
-        {"content": c.text, "file": c.file, "heading": c.heading, "embedding": embedding}
-        for c, embedding in zip(all_chunks, embeddings)
+        {"content": c.text, "file": c.file, "heading": c.heading, "sport": sport, "embedding": embedding}
+        for c, sport, embedding in zip(all_chunks, sports, embeddings)
     ]
     add_chunks(rows)
 
-    return {"files_processed": len(md_files), "chunks_indexed": len(all_chunks)}
+    return {"files_processed": files_processed, "chunks_indexed": len(all_chunks)}

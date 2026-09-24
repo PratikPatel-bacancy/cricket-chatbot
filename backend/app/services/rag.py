@@ -9,27 +9,54 @@ from app.services.vectorstore import query as query_vectorstore
 
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are an expert cricket rules assistant. You answer questions about the \
-Laws of Cricket and common playing conditions (LBW, DRS, no-balls, wides, run-outs, follow-on, \
-powerplays, boundary/catch rules, etc.).
+SPORT_INFO = {
+    "cricket": {
+        "name": "Cricket",
+        "topics": "LBW, DRS, no-balls, wides, run-outs, follow-on, powerplays, boundary/catch rules, etc.",
+    },
+    "football": {
+        "name": "Football (Soccer)",
+        "topics": "offside, fouls and cards, penalties and shootouts, VAR, match structure, etc.",
+    },
+    "basketball": {
+        "name": "Basketball",
+        "topics": "fouls and violations, the shot clock, scoring, game structure, etc.",
+    },
+    "tennis": {
+        "name": "Tennis",
+        "topics": "scoring (deuce, tiebreaks), faults and lets, Hawk-Eye challenges, match format, etc.",
+    },
+    "badminton": {
+        "name": "Badminton",
+        "topics": "rally point scoring, service rules, faults and lets, match format, etc.",
+    },
+}
+
+DEFAULT_SPORT = "cricket"
+
+MAX_HISTORY_MESSAGES = 20
+
+
+def _system_prompt(sport: str) -> str:
+    info = SPORT_INFO.get(sport, SPORT_INFO[DEFAULT_SPORT])
+    return f"""You are an expert {info['name']} rules assistant. You answer questions about \
+{info['topics']}
 
 Answer ONLY using the rule excerpts provided in the context below. If the context does not \
 contain enough information to answer confidently, say you don't have that rule in your \
 knowledge base rather than guessing. Keep answers clear and concise, and reference the \
 relevant law/rule name when helpful.
 
-Use the prior conversation turns to understand follow-up questions (e.g. "what about in T20s?"
-after discussing follow-on rules), but still ground every factual claim in the provided context."""
-
-MAX_HISTORY_MESSAGES = 20
+Use the prior conversation turns to understand follow-up questions, but still ground every \
+factual claim in the provided context."""
 
 
-def retrieve(question: str, top_k: int | None = None):
+def retrieve(question: str, sport: str = DEFAULT_SPORT, top_k: int | None = None):
     k = top_k or settings.top_k
     embedding = embed_query(question)
     # Over-fetch, then dedupe by (file, heading) so overlapping chunk splits
     # from the same section don't crowd out other distinct rule sections.
-    rows = query_vectorstore(embedding, k * 3)
+    rows = query_vectorstore(embedding, k * 3, sport=sport)
 
     seen: set[tuple[str, str]] = set()
     sources = []
@@ -60,8 +87,10 @@ def _build_prompt(question: str, sources: list[dict]) -> str:
     return f"Context (rule excerpts):\n\n{context}\n\n---\n\nQuestion: {question}"
 
 
-def _build_messages(question: str, sources: list[dict], history: list[dict] | None = None) -> list[dict]:
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+def _build_messages(
+    question: str, sources: list[dict], sport: str, history: list[dict] | None = None
+) -> list[dict]:
+    messages = [{"role": "system", "content": _system_prompt(sport)}]
     for turn in (history or [])[-MAX_HISTORY_MESSAGES:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
     messages.append({"role": "user", "content": _build_prompt(question, sources)})
@@ -75,11 +104,13 @@ def _groq_headers() -> dict:
     }
 
 
-async def answer_stream(question: str, history: list[dict] | None = None) -> AsyncIterator[dict]:
+async def answer_stream(
+    question: str, sport: str = DEFAULT_SPORT, history: list[dict] | None = None
+) -> AsyncIterator[dict]:
     """Yields dicts of shape {"type": "token", "text": str} for each streamed
     token, followed by a final {"type": "sources", "sources": [...]}."""
-    sources = retrieve(question)
-    messages = _build_messages(question, sources, history)
+    sources = retrieve(question, sport)
+    messages = _build_messages(question, sources, sport, history)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         async with client.stream(
@@ -104,9 +135,9 @@ async def answer_stream(question: str, history: list[dict] | None = None) -> Asy
     yield {"type": "sources", "sources": sources}
 
 
-def answer_once(question: str, history: list[dict] | None = None) -> dict:
-    sources = retrieve(question)
-    messages = _build_messages(question, sources, history)
+def answer_once(question: str, sport: str = DEFAULT_SPORT, history: list[dict] | None = None) -> dict:
+    sources = retrieve(question, sport)
+    messages = _build_messages(question, sources, sport, history)
 
     response = httpx.post(
         GROQ_CHAT_URL,

@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { streamChat } from "../api/chat";
+import { getSport, SPORTS } from "../sports";
 import ChatInput from "./ChatInput";
 import MessageBubble from "./MessageBubble";
 
-export default function ChatWindow({ session, onMessagesChange }) {
+export default function ChatWindow({ session, onMessagesChange, onSportChange }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef(null);
   const messages = session.messages;
+  const sportLocked = messages.length > 1;
+  const sport = getSport(session.sport);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -23,7 +26,7 @@ export default function ChatWindow({ session, onMessagesChange }) {
     ]);
     setIsStreaming(true);
 
-    streamChat(question, history, {
+    streamChat(question, history, session.sport, {
       onToken: (token) => {
         onMessagesChange((prev) => {
           const next = [...prev];
@@ -59,9 +62,30 @@ export default function ChatWindow({ session, onMessagesChange }) {
 
   return (
     <div className="flex flex-col h-screen flex-1 min-w-0 bg-gray-50">
-      <header className="px-4 py-4 border-b border-gray-200 bg-white">
-        <h1 className="text-lg font-semibold text-gray-800">🏏 Cricket Rules Chatbot</h1>
-        <p className="text-xs text-gray-400">Answers grounded in the Laws of Cricket knowledge base</p>
+      <header className="flex items-center justify-between px-4 py-4 border-b border-gray-200 bg-white">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-800">🏆 Sports Rules Chatbot</h1>
+          <p className="text-xs text-gray-400">Answers grounded in a curated rules knowledge base</p>
+        </div>
+
+        {sportLocked ? (
+          <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 text-sm font-medium px-3 py-1.5">
+            <span>{sport.emoji}</span>
+            <span>{sport.label}</span>
+          </span>
+        ) : (
+          <select
+            value={session.sport}
+            onChange={(e) => onSportChange(e.target.value)}
+            className="rounded-full border border-gray-300 bg-white text-sm font-medium px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            {SPORTS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.emoji} {s.label}
+              </option>
+            ))}
+          </select>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-4">

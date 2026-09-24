@@ -8,12 +8,12 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
  * Calls onToken(text) for each streamed token and onSources(sources) once
  * the answer is complete.
  */
-export async function streamChat(question, history, { onToken, onSources, onError }) {
+export async function streamChat(question, history, sport, { onToken, onSources, onError }) {
   try {
     const response = await fetch(`${API_BASE_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question, history, sport }),
     });
 
     if (!response.ok || !response.body) {

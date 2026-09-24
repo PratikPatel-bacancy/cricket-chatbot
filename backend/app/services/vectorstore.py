@@ -34,11 +34,15 @@ def add_chunks(rows: list[dict]):
     response.raise_for_status()
 
 
-def query(embedding: list[float], top_k: int) -> list[dict]:
+def query(embedding: list[float], top_k: int, sport: str | None = None) -> list[dict]:
+    payload = {"query_embedding": embedding, "match_count": top_k}
+    if sport:
+        payload["filter_sport"] = sport
+
     response = httpx.post(
         f"{settings.supabase_url}/rest/v1/rpc/{settings.match_function}",
         headers=_headers(),
-        json={"query_embedding": embedding, "match_count": top_k},
+        json=payload,
         timeout=30.0,
     )
     response.raise_for_status()
