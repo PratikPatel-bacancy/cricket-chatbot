@@ -24,7 +24,7 @@ export default function SportPicker({ value, onChange, locked }) {
           </span>
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align="end">
+      <SelectContent align="end" position="popper" sideOffset={6}>
         {SPORTS.map((s) => (
           <SelectItem key={s.id} value={s.id}>
             <span className="text-base leading-none">{s.emoji}</span>
