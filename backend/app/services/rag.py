@@ -30,6 +30,15 @@ SPORT_INFO = {
         "name": "Badminton",
         "topics": "rally point scoring, service rules, faults and lets, match format, etc.",
     },
+    "asian_games_2026": {
+        "name": "2026 Asian Games",
+        "topics": (
+            "the host city and dates, the sports program, and participation numbers for the "
+            "2026 Asian Games in Aichi-Nagoya, Japan (fixed event facts only — not live medal "
+            "counts, results, schedules, or athlete rosters, which change continuously and are "
+            "not in this knowledge base)"
+        ),
+    },
 }
 
 DEFAULT_SPORT = "cricket"
@@ -39,13 +48,13 @@ MAX_HISTORY_MESSAGES = 20
 
 def _system_prompt(sport: str) -> str:
     info = SPORT_INFO.get(sport, SPORT_INFO[DEFAULT_SPORT])
-    return f"""You are an expert {info['name']} rules assistant. You answer questions about \
+    return f"""You are an expert {info['name']} assistant. You answer questions about \
 {info['topics']}
 
-Answer ONLY using the rule excerpts provided in the context below. If the context does not \
-contain enough information to answer confidently, say you don't have that rule in your \
+Answer ONLY using the excerpts provided in the context below. If the context does not \
+contain enough information to answer confidently, say you don't have that information in your \
 knowledge base rather than guessing. Keep answers clear and concise, and reference the \
-relevant law/rule name when helpful.
+relevant rule/fact when helpful.
 
 Use the prior conversation turns to understand follow-up questions, but still ground every \
 factual claim in the provided context."""
