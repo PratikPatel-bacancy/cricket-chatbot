@@ -3,16 +3,10 @@ import { streamChat } from "../api/chat";
 import ChatInput from "./ChatInput";
 import MessageBubble from "./MessageBubble";
 
-const WELCOME = {
-  role: "assistant",
-  text: "Ask me anything about cricket's rules and laws — LBW, DRS, no-balls, follow-on, dismissals, powerplays, and more.",
-  sources: [],
-};
-
-export default function ChatWindow() {
-  const [messages, setMessages] = useState([WELCOME]);
+export default function ChatWindow({ session, onMessagesChange }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef(null);
+  const messages = session.messages;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -22,7 +16,7 @@ export default function ChatWindow() {
     // messages[0] is the welcome message, not part of the real conversation.
     const history = messages.slice(1).map((m) => ({ role: m.role, content: m.text }));
 
-    setMessages((prev) => [
+    onMessagesChange((prev) => [
       ...prev,
       { role: "user", text: question },
       { role: "assistant", text: "", sources: [], streaming: true },
@@ -31,7 +25,7 @@ export default function ChatWindow() {
 
     streamChat(question, history, {
       onToken: (token) => {
-        setMessages((prev) => {
+        onMessagesChange((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
           next[next.length - 1] = { ...last, text: last.text + token };
@@ -39,7 +33,7 @@ export default function ChatWindow() {
         });
       },
       onSources: (sources) => {
-        setMessages((prev) => {
+        onMessagesChange((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
           next[next.length - 1] = { ...last, sources, streaming: false };
@@ -48,7 +42,7 @@ export default function ChatWindow() {
         setIsStreaming(false);
       },
       onError: () => {
-        setMessages((prev) => {
+        onMessagesChange((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
           next[next.length - 1] = {
@@ -64,17 +58,19 @@ export default function ChatWindow() {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-2xl mx-auto bg-gray-50">
+    <div className="flex flex-col h-screen flex-1 min-w-0 bg-gray-50">
       <header className="px-4 py-4 border-b border-gray-200 bg-white">
         <h1 className="text-lg font-semibold text-gray-800">🏏 Cricket Rules Chatbot</h1>
         <p className="text-xs text-gray-400">Answers grounded in the Laws of Cricket knowledge base</p>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((m, i) => (
-          <MessageBubble key={i} role={m.role} text={m.text} sources={m.sources} isStreaming={m.streaming} />
-        ))}
-        <div ref={bottomRef} />
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-2xl mx-auto space-y-3">
+          {messages.map((m, i) => (
+            <MessageBubble key={i} role={m.role} text={m.text} isStreaming={m.streaming} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       <ChatInput onSend={handleSend} disabled={isStreaming} />
