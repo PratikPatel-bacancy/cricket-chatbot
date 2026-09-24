@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { streamChat } from "../api/chat";
-import { getSport, SPORTS } from "../sports";
 import ChatInput from "./ChatInput";
 import MessageBubble from "./MessageBubble";
+import SportPicker from "./SportPicker";
 
 export default function ChatWindow({ session, onMessagesChange, onSportChange }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef(null);
   const messages = session.messages;
   const sportLocked = messages.length > 1;
-  const sport = getSport(session.sport);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -68,24 +67,7 @@ export default function ChatWindow({ session, onMessagesChange, onSportChange })
           <p className="text-xs text-gray-400">Answers grounded in a curated rules knowledge base</p>
         </div>
 
-        {sportLocked ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 text-sm font-medium px-3 py-1.5">
-            <span>{sport.emoji}</span>
-            <span>{sport.label}</span>
-          </span>
-        ) : (
-          <select
-            value={session.sport}
-            onChange={(e) => onSportChange(e.target.value)}
-            className="rounded-full border border-gray-300 bg-white text-sm font-medium px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            {SPORTS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.emoji} {s.label}
-              </option>
-            ))}
-          </select>
-        )}
+        <SportPicker value={session.sport} onChange={onSportChange} locked={sportLocked} />
       </header>
 
       <div className="flex-1 overflow-y-auto p-4">
